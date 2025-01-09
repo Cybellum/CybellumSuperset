@@ -282,6 +282,7 @@ const StyledDashboardContent = styled.div<{
     flex-wrap: nowrap;
     height: auto;
     flex: 1;
+    width: calc(100% - ${CLOSED_FILTER_BAR_WIDTH}px);
 
     .grid-container .dashboard-component-tabs {
       box-shadow: none;

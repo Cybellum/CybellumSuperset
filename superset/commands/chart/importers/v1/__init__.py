@@ -85,7 +85,7 @@ class ImportChartsCommand(ImportModelsCommand):
                 and config["database_uuid"] in database_ids
             ):
                 config["database_id"] = database_ids[config["database_uuid"]]
-                dataset = import_dataset(config, overwrite=False)
+                dataset = import_dataset(config, overwrite=True)
                 datasets[str(dataset.uuid)] = dataset
 
         # import charts with the correct parent ref
