@@ -39,13 +39,15 @@ WORKDIR /app/superset-frontend
 RUN --mount=type=bind,target=/frontend-mem-nag.sh,src=./docker/frontend-mem-nag.sh \
     /frontend-mem-nag.sh
 
-RUN --mount=type=bind,target=./package.json,src=./superset-frontend/package.json \
-    --mount=type=bind,target=./package-lock.json,src=./superset-frontend/package-lock.json \
-    npm ci
+ADD ./superset-frontend/package.json package.json
+ADD ./superset-frontend/package-lock.json package-lock.json
+#RUN --mount=type=bind,target=./package.json,src=./superset-frontend/package.json \
+#    --mount=type=bind,target=./package-lock.json,src=./superset-frontend/package-lock.json \
+RUN npm config set fetch-retry-mintimeout 20000; npm config set fetch-retry-maxtimeout 120000; npm install
 
 COPY ./superset-frontend ./
 # This seems to be the most expensive step
-ARG ASSET_BASE_URL=""
+ARG ASSET_BASE_URL="/prodsec-bi"
 RUN npm run ${BUILD_CMD}
 
 ######################################################################
@@ -64,7 +66,7 @@ ENV LANG=C.UTF-8 \
 
 RUN mkdir -p ${PYTHONPATH} superset/static superset-frontend apache_superset.egg-info requirements \
     && useradd --user-group -d ${SUPERSET_HOME} -m --no-log-init --shell /bin/bash superset \
-    && apt-get update -qq && apt-get install -yqq --no-install-recommends \
+    && apt-get update && apt-get install -y`` --no-install-recommends \
         build-essential \
         curl \
         default-libmysqlclient-dev \

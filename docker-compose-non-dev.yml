@@ -22,6 +22,8 @@ x-superset-volumes:
   &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
   - ./docker:/app/docker
   - superset_home:/app/superset_home
+  - ./superset_config_docker.py:/app/superset_config.py
+
 
 version: "3.7"
 services:
@@ -52,6 +54,10 @@ services:
       - 8088:8088
     depends_on: *superset-depends-on
     volumes: *superset-volumes
+    environment:
+      SUPERSET_CONFIG_PATH: /app/superset_config.py
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   superset-init:
     image: *superset-image
@@ -63,6 +69,8 @@ services:
     volumes: *superset-volumes
     healthcheck:
       disable: true
+    environment:
+      SUPERSET_CONFIG_PATH: /app/superset_config.py
 
   superset-worker:
     image: *superset-image
@@ -79,6 +87,10 @@ services:
           "CMD-SHELL",
           "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME",
         ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SUPERSET_CONFIG_PATH: /app/superset_config.py
 
   superset-worker-beat:
     image: *superset-image
