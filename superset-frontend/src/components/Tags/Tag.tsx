@@ -19,9 +19,10 @@
 
 import { styled } from '@superset-ui/core';
 import TagType from 'src/types/TagType';
-import AntdTag from 'antd/lib/tag';
-import React, { useMemo } from 'react';
+import { Tag as AntdTag } from 'antd-v5';
+import { useMemo } from 'react';
 import { Tooltip } from 'src/components/Tooltip';
+import { Icons } from 'src/components/Icons';
 
 import { withPrefix } from 'src/utils/routeUtils';
 
@@ -29,9 +30,12 @@ const StyledTag = styled(AntdTag)`
   ${({ theme }) => `
   margin-top: ${theme.gridUnit}px;
   margin-bottom: ${theme.gridUnit}px;
-  font-size: ${theme.typography.sizes.s}px;
   `};
 `;
+
+export const CustomCloseIcon = (
+  <Icons.CloseOutlined iconSize="xs" role="button" />
+);
 
 const MAX_DISPLAY_CHAR = 20;
 
@@ -43,11 +47,15 @@ const Tag = ({
   editable = false,
   onClick = undefined,
   toolTipTitle = name,
+  children,
+  ...rest
 }: TagType) => {
   const isLongTag = useMemo(() => name.length > MAX_DISPLAY_CHAR, [name]);
   const tagDisplay = isLongTag ? `${name.slice(0, MAX_DISPLAY_CHAR)}...` : name;
 
-  const handleClose = () => (index ? onDelete?.(index) : null);
+  const handleClose = () => (index !== undefined ? onDelete?.(index) : null);
+
+  const whatRole = onClick ? (!id ? 'button' : 'link') : undefined;
 
   const tagElem = (
     <>
@@ -57,24 +65,32 @@ const Tag = ({
             key={id}
             closable={editable}
             onClose={handleClose}
-            color="blue"
+            closeIcon={editable ? CustomCloseIcon : undefined}
+            {...rest}
           >
-            {tagDisplay}
+            {children || tagDisplay}
           </StyledTag>
         </Tooltip>
       ) : (
         <Tooltip title={toolTipTitle} key={toolTipTitle}>
-          <StyledTag data-test="tag" role="link" key={id} onClick={onClick}>
+          <StyledTag
+            data-test="tag"
+            key={id}
+            onClick={onClick}
+            role={whatRole}
+            {...rest}
+          >
+            {' '}
             {id ? (
               <a
                 href={withPrefix(`/superset/all_entities/?id=${id}`)}
                 target="_blank"
                 rel="noreferrer"
               >
-                {tagDisplay}
+                {children || tagDisplay}
               </a>
             ) : (
-              tagDisplay
+              children || tagDisplay
             )}
           </StyledTag>
         </Tooltip>

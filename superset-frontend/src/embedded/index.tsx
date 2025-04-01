@@ -16,13 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React, { lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { BrowserRouter as Router, Route } from 'react-router-dom';
 import { makeApi, t, logging } from '@superset-ui/core';
 import Switchboard from '@superset-ui/switchboard';
 import getBootstrapData from 'src/utils/getBootstrapData';
 import setupClient from 'src/setup/setupClient';
+import setupPlugins from 'src/setup/setupPlugins';
 import { RootContextProviders } from 'src/views/RootContextProviders';
 import { store, USER_LOADED } from 'src/views/store';
 import ErrorBoundary from 'src/components/ErrorBoundary';
@@ -32,6 +33,8 @@ import ToastContainer from 'src/components/MessageToasts/ToastContainer';
 import { UserWithPermissionsAndRoles } from 'src/types/bootstrapTypes';
 import { withPrefix } from 'src/utils/routeUtils';
 import { embeddedApi } from './api';
+
+setupPlugins();
 
 const debugMode = process.env.WEBPACK_MODE === 'development';
 const bootstrapData = getBootstrapData();
@@ -81,7 +84,9 @@ function showFailureMessage(message: string) {
 
 if (!window.parent || window.parent === window) {
   showFailureMessage(
-    'This page is intended to be embedded in an iframe, but it looks like that is not the case.',
+    t(
+      'This page is intended to be embedded in an iframe, but it looks like that is not the case.',
+    ),
   );
 }
 
@@ -142,7 +147,9 @@ function start() {
       // something is most likely wrong with the guest token
       logging.error(err);
       showFailureMessage(
-        'Something went wrong with embedded authentication. Check the dev console for details.',
+        t(
+          'Something went wrong with embedded authentication. Check the dev console for details.',
+        ),
       );
     },
   );

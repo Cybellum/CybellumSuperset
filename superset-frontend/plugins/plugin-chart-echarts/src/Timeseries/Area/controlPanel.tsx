@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React from 'react';
 import { t } from '@superset-ui/core';
 import {
   ControlPanelConfig,
@@ -40,6 +39,7 @@ import {
   xAxisLabelRotation,
   truncateXAxis,
   xAxisBounds,
+  minorTicks,
 } from '../../controls';
 import { AreaChartStackControlOptions } from '../../constants';
 
@@ -57,7 +57,6 @@ const {
 } = DEFAULT_FORM_DATA;
 const config: ControlPanelConfig = {
   controlPanelSections: [
-    sections.genericTime,
     sections.echartsTimeSeriesQueryWithXAxisSort,
     sections.advancedAnalyticsControls,
     sections.annotationsAndLayersControls,
@@ -69,6 +68,7 @@ const config: ControlPanelConfig = {
       controlSetRows: [
         ...seriesOrderSection,
         ['color_scheme'],
+        ['time_shift_color'],
         [
           {
             name: 'seriesType',
@@ -131,7 +131,7 @@ const config: ControlPanelConfig = {
               default: false,
               description: t(
                 'Whether to show extra controls or not. Extra controls ' +
-                  'include things like making mulitBar charts stacked ' +
+                  'include things like making multiBar charts stacked ' +
                   'or side by side.',
               ),
             },
@@ -169,6 +169,7 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [minorTicks],
         [
           {
             name: 'zoomable',

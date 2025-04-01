@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import logging
 import re
 from re import Pattern
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from flask_babel import gettext as __
@@ -55,7 +57,7 @@ CONNECTION_UNKNOWN_DATABASE_REGEX = re.compile(
 )
 
 
-class RedshiftEngineSpec(PostgresBaseEngineSpec, BasicParametersMixin):
+class RedshiftEngineSpec(BasicParametersMixin, PostgresBaseEngineSpec):
     engine = "redshift"
     engine_name = "Amazon Redshift"
     max_column_name_length = 127
@@ -129,7 +131,7 @@ class RedshiftEngineSpec(PostgresBaseEngineSpec, BasicParametersMixin):
             # uses the max size for redshift nvarchar(65335)
             # the default object and string types create a varchar(256)
             col_name: NVARCHAR(length=65535)
-            for col_name, type in zip(df.columns, df.dtypes)
+            for col_name, type in zip(df.columns, df.dtypes, strict=False)
             if isinstance(type, pd.StringDtype)
         }
 
@@ -148,7 +150,7 @@ class RedshiftEngineSpec(PostgresBaseEngineSpec, BasicParametersMixin):
         return label.lower()
 
     @classmethod
-    def get_cancel_query_id(cls, cursor: Any, query: Query) -> Optional[str]:
+    def get_cancel_query_id(cls, cursor: Any, query: Query) -> str | None:
         """
         Get Redshift PID that will be used to cancel all other running
         queries in the same session.
@@ -174,7 +176,7 @@ class RedshiftEngineSpec(PostgresBaseEngineSpec, BasicParametersMixin):
         try:
             logger.info("Killing Redshift PID:%s", str(cancel_query_id))
             cursor.execute(
-                "SELECT pg_cancel_backend(procpid) "
+                "SELECT pg_cancel_backend(procpid) "  # noqa: S608
                 "FROM pg_stat_activity "
                 f"WHERE procpid='{cancel_query_id}'"
             )

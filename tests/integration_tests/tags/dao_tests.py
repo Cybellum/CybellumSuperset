@@ -16,26 +16,25 @@
 # under the License.
 # isort:skip_file
 from operator import and_
-from unittest.mock import patch
+from unittest.mock import patch  # noqa: F401
 import pytest
-from superset.daos.exceptions import DAOCreateFailedError, DAOException
 from superset.models.slice import Slice
-from superset.models.sql_lab import SavedQuery
+from superset.models.sql_lab import SavedQuery  # noqa: F401
 from superset.daos.tag import TagDAO
-from superset.tags.exceptions import InvalidTagNameError
+from superset.tags.exceptions import InvalidTagNameError  # noqa: F401
 from superset.tags.models import ObjectType, Tag, TaggedObject
 from tests.integration_tests.tags.api_tests import TAGS_FIXTURE_COUNT
 
-import tests.integration_tests.test_app  # pylint: disable=unused-import
-from superset import db, security_manager
-from superset.daos.dashboard import DashboardDAO
+import tests.integration_tests.test_app  # pylint: disable=unused-import  # noqa: F401
+from superset import db, security_manager  # noqa: F401
+from superset.daos.dashboard import DashboardDAO  # noqa: F401
 from superset.models.dashboard import Dashboard
 from tests.integration_tests.base_tests import SupersetTestCase
 from tests.integration_tests.fixtures.world_bank_dashboard import (
-    load_world_bank_dashboard_with_slices,
-    load_world_bank_data,
+    load_world_bank_dashboard_with_slices,  # noqa: F401
+    load_world_bank_data,  # noqa: F401
 )
-from tests.integration_tests.fixtures.tags import with_tagging_system_feature
+from tests.integration_tests.fixtures.tags import with_tagging_system_feature  # noqa: F401
 
 
 class TestTagsDAO(SupersetTestCase):
@@ -67,7 +66,7 @@ class TestTagsDAO(SupersetTestCase):
         db.session.commit()
         return tagged_object
 
-    @pytest.fixture()
+    @pytest.fixture
     def create_tags(self):
         with self.create_app().app_context():
             # clear tags table
@@ -86,7 +85,7 @@ class TestTagsDAO(SupersetTestCase):
                 )
             yield tags
 
-    @pytest.fixture()
+    @pytest.fixture
     def create_tagged_objects(self):
         with self.create_app().app_context():
             # clear tags table
@@ -124,13 +123,19 @@ class TestTagsDAO(SupersetTestCase):
     @pytest.mark.usefixtures("with_tagging_system_feature")
     # test create tag
     def test_create_tagged_objects(self):
-        # test that a tag cannot be added if it has ':' in it
-        with pytest.raises(DAOCreateFailedError):
-            TagDAO.create_custom_tagged_objects(
-                object_type=ObjectType.dashboard.name,
-                object_id=1,
-                tag_names=["invalid:example tag 1"],
-            )
+        # test that a tag can be added if it has ':' in it
+        TagDAO.create_custom_tagged_objects(
+            object_type=ObjectType.dashboard.name,
+            object_id=1,
+            tag_names=["valid:example tag 1"],
+        )
+
+        # test that a tag can be added if it has ',' in it
+        TagDAO.create_custom_tagged_objects(
+            object_type=ObjectType.dashboard.name,
+            object_id=1,
+            tag_names=["example,tag,1"],
+        )
 
         # test that a tag can be added if it has a valid name
         TagDAO.create_custom_tagged_objects(
@@ -182,6 +187,7 @@ class TestTagsDAO(SupersetTestCase):
                     TaggedObject.object_type == ObjectType.chart,
                 ),
             )
+            .join(Tag, TaggedObject.tag_id == Tag.id)
             .distinct(Slice.id)
             .count()
         )
@@ -194,6 +200,7 @@ class TestTagsDAO(SupersetTestCase):
                     TaggedObject.object_type == ObjectType.dashboard,
                 ),
             )
+            .join(Tag, TaggedObject.tag_id == Tag.id)
             .distinct(Dashboard.id)
             .count()
             + num_charts
@@ -320,11 +327,3 @@ class TestTagsDAO(SupersetTestCase):
             .first()
         )
         assert tagged_object is None
-
-    @pytest.mark.usefixtures("load_world_bank_dashboard_with_slices")
-    @pytest.mark.usefixtures("with_tagging_system_feature")
-    def test_validate_tag_name(self):
-        assert TagDAO.validate_tag_name("example_tag_name") is True
-        assert TagDAO.validate_tag_name("invalid:tag_name") is False
-        db.session.query(TaggedObject).delete()
-        db.session.query(Tag).delete()

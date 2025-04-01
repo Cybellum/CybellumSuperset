@@ -56,6 +56,8 @@ export interface DataColumnMeta {
   key: string;
   // `label` is verbose column name used for rendering
   label: string;
+  // `originalLabel` preserves the original label when time comparison transforms the labels
+  originalLabel?: string;
   dataType: GenericDataType;
   formatter?:
     | TimeFormatter
@@ -102,6 +104,12 @@ export interface TableChartProps extends ChartProps {
   queriesData: ChartDataResponseResult[];
 }
 
+export type BasicColorFormatterType = {
+  backgroundColor: string;
+  arrowColor: string;
+  mainArrow: string;
+};
+
 export interface TableChartTransformedProps<D extends DataRecord = DataRecord> {
   timeGrain?: TimeGranularity;
   height: number;
@@ -130,11 +138,21 @@ export interface TableChartTransformedProps<D extends DataRecord = DataRecord> {
   onChangeFilter?: ChartProps['hooks']['onAddFilter'];
   columnColorFormatters?: ColorFormatters;
   allowRearrangeColumns?: boolean;
+  allowRenderHtml?: boolean;
   onContextMenu?: (
     clientX: number,
     clientY: number,
     filters?: ContextMenuFilters,
   ) => void;
+  isUsingTimeComparison?: boolean;
+  basicColorFormatters?: { [Key: string]: BasicColorFormatterType }[];
+  basicColorColumnFormatters?: { [Key: string]: BasicColorFormatterType }[];
+  startDateOffset?: string;
+}
+
+export enum ColorSchemeEnum {
+  'Green' = 'Green',
+  'Red' = 'Red',
 }
 
 export default {};

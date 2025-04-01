@@ -17,7 +17,6 @@
  * under the License.
  */
 
-import React from 'react';
 import { render, screen } from 'spec/helpers/testing-library';
 import { withPrefix } from 'src/utils/routeUtils';
 import { GenericLink } from './GenericLink';

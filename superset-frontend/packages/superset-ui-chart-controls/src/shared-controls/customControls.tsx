@@ -20,9 +20,9 @@
 import {
   ContributionType,
   ensureIsArray,
+  GenericDataType,
   getColumnLabel,
   getMetricLabel,
-  isDefined,
   QueryFormColumn,
   QueryFormMetric,
   t,
@@ -38,6 +38,8 @@ import {
   DEFAULT_XAXIS_SORT_SERIES_DATA,
   SORT_SERIES_CHOICES,
 } from '../constants';
+import { checkColumnType } from '../utils/checkColumnType';
+import { isSortable } from '../utils/isSortable';
 
 export const contributionModeControl = {
   name: 'contributionMode',
@@ -54,27 +56,43 @@ export const contributionModeControl = {
   },
 };
 
-function isTemporal(controls: ControlStateMapping): boolean {
-  return !(
-    isDefined(controls?.x_axis?.value) &&
-    !isTemporalColumn(
-      getColumnLabel(controls?.x_axis?.value as QueryFormColumn),
-      controls?.datasource?.datasource,
-    )
-  );
-}
-
 const xAxisSortVisibility = ({ controls }: { controls: ControlStateMapping }) =>
-  !isTemporal(controls) &&
+  isSortable(controls) &&
   ensureIsArray(controls?.groupby?.value).length === 0 &&
   ensureIsArray(controls?.metrics?.value).length === 1;
+
+// TODO: Expand this aggregation options list to include all backend-supported aggregations.
+// TODO:  Migrate existing chart types (Pivot Table, etc.) to use this shared control.
+export const aggregationControl = {
+  name: 'aggregation',
+  config: {
+    type: 'SelectControl',
+    label: t('Aggregation Method'),
+    default: 'LAST_VALUE',
+    clearable: false,
+    renderTrigger: false,
+    choices: [
+      ['LAST_VALUE', t('Last Value')],
+      ['sum', t('Total (Sum)')],
+      ['mean', t('Average (Mean)')],
+      ['min', t('Minimum')],
+      ['max', t('Maximum')],
+      ['median', t('Median')],
+    ],
+    description: t('Select an aggregation method to apply to the metric.'),
+    provideFormDataToProps: true,
+    mapStateToProps: ({ form_data }: ControlPanelState) => ({
+      value: form_data.aggregation || 'LAST_VALUE',
+    }),
+  },
+};
 
 const xAxisMultiSortVisibility = ({
   controls,
 }: {
   controls: ControlStateMapping;
 }) =>
-  !isTemporal(controls) &&
+  isSortable(controls) &&
   (!!ensureIsArray(controls?.groupby?.value).length ||
     ensureIsArray(controls?.metrics?.value).length > 1);
 
@@ -141,7 +159,29 @@ export const xAxisSortAscControl = {
         : t('X-Axis Sort Ascending'),
     default: true,
     description: t('Whether to sort ascending or descending on the base Axis.'),
-    visibility: xAxisSortVisibility,
+    visibility: ({ controls }: { controls: ControlStateMapping }) =>
+      controls?.x_axis_sort?.value !== undefined &&
+      xAxisSortVisibility({ controls }),
+  },
+};
+
+export const xAxisForceCategoricalControl = {
+  name: 'xAxisForceCategorical',
+  config: {
+    type: 'CheckboxControl',
+    label: () => t('Force categorical'),
+    default: false,
+    description: t('Treat values as categorical.'),
+    initialValue: (control: ControlState, state: ControlPanelState | null) =>
+      state?.form_data?.x_axis_sort !== undefined || control.value,
+    renderTrigger: true,
+    visibility: ({ controls }: { controls: ControlStateMapping }) =>
+      checkColumnType(
+        getColumnLabel(controls?.x_axis?.value as QueryFormColumn),
+        controls?.datasource?.datasource,
+        [GenericDataType.Numeric],
+      ),
+    shouldMapStateToProps: () => true,
   },
 };
 
@@ -173,6 +213,8 @@ export const xAxisSortSeriesAscendingControl = {
     default: DEFAULT_XAXIS_SORT_SERIES_DATA.sort_series_ascending,
     description: t('Whether to sort ascending or descending on the base Axis.'),
     renderTrigger: true,
-    visibility: xAxisMultiSortVisibility,
+    visibility: ({ controls }: { controls: ControlStateMapping }) =>
+      controls?.x_axis_sort_series?.value !== undefined &&
+      xAxisMultiSortVisibility({ controls }),
   },
 };

@@ -32,6 +32,7 @@ import { safeStringify } from 'src/utils/safeStringify';
 import { optionLabel } from 'src/utils/common';
 import { URL_PARAMS } from 'src/constants';
 import {
+  DISABLE_INPUT_OPERATORS,
   MULTI_OPERATORS,
   OPERATOR_ENUM_TO_OPERATOR_TYPE,
   UNSAVED_CHART_ID,
@@ -101,7 +102,7 @@ export function mountExploreUrl(endpointType, extraSearch = {}, force = false) {
     if (force) {
       search.force = '1';
     }
-    search.standalone = DashboardStandaloneMode.HIDE_NAV;
+    search.standalone = DashboardStandaloneMode.HideNav;
   }
   return uri.directory(directory).search(search).toString();
 }
@@ -304,9 +305,15 @@ export const getSimpleSQLExpression = (subject, operator, comparator) => {
     [...MULTI_OPERATORS]
       .map(op => OPERATOR_ENUM_TO_OPERATOR_TYPE[op].operation)
       .indexOf(operator) >= 0;
+  const showComparator =
+    DISABLE_INPUT_OPERATORS.map(
+      op => OPERATOR_ENUM_TO_OPERATOR_TYPE[op].operation,
+    ).indexOf(operator) === -1;
   // If returned value is an object after changing dataset
   let expression =
-    typeof subject === 'object' ? subject?.column_name ?? '' : subject ?? '';
+    typeof subject === 'object'
+      ? (subject?.column_name ?? '')
+      : (subject ?? '');
   if (subject && operator) {
     expression += ` ${operator}`;
     const firstValue =
@@ -316,13 +323,13 @@ export const getSimpleSQLExpression = (subject, operator, comparator) => {
       firstValue !== undefined && Number.isNaN(Number(firstValue));
     const quote = isString ? "'" : '';
     const [prefix, suffix] = isMulti ? ['(', ')'] : ['', ''];
-    const formattedComparators = comparatorArray
-      .map(val => optionLabel(val))
-      .map(
-        val =>
-          `${quote}${isString ? String(val).replace("'", "''") : val}${quote}`,
-      );
-    if (comparatorArray.length > 0) {
+    if (comparatorArray.length > 0 && showComparator) {
+      const formattedComparators = comparatorArray
+        .map(val => optionLabel(val))
+        .map(
+          val =>
+            `${quote}${isString ? String(val).replace(/'/g, "''") : val}${quote}`,
+        );
       expression += ` ${prefix}${formattedComparators.join(', ')}${suffix}`;
     }
   }

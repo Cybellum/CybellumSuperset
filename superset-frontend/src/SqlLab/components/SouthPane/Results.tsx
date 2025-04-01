@@ -16,10 +16,10 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React from 'react';
+import { FC } from 'react';
 import { shallowEqual, useSelector } from 'react-redux';
 import Alert from 'src/components/Alert';
-import { EmptyStateMedium } from 'src/components/EmptyState';
+import { EmptyState } from 'src/components/EmptyState';
 import { FeatureFlag, styled, t, isFeatureEnabled } from '@superset-ui/core';
 
 import { SqlLabRootState } from 'src/SqlLab/types';
@@ -29,7 +29,7 @@ import { LOCALSTORAGE_MAX_QUERY_AGE_MS } from '../../constants';
 const EXTRA_HEIGHT_RESULTS = 8; // we need extra height in RESULTS tab. because the height from props was calculated based on PREVIEW tab.
 
 type Props = {
-  latestQueryId: string;
+  latestQueryId?: string;
   height: number;
   displayLimit: number;
   defaultQueryLimit: number;
@@ -37,7 +37,7 @@ type Props = {
 
 const StyledEmptyStateWrapper = styled.div`
   height: 100%;
-  .ant-empty-image img {
+  .antd5-empty-image img {
     margin-right: 28px;
   }
 
@@ -46,7 +46,7 @@ const StyledEmptyStateWrapper = styled.div`
   }
 `;
 
-const Results: React.FC<Props> = ({
+const Results: FC<Props> = ({
   latestQueryId,
   height,
   displayLimit,
@@ -67,7 +67,7 @@ const Results: React.FC<Props> = ({
   ) {
     return (
       <StyledEmptyStateWrapper>
-        <EmptyStateMedium
+        <EmptyState
           title={t('Run a query to display results')}
           image="document.svg"
         />
@@ -76,7 +76,7 @@ const Results: React.FC<Props> = ({
   }
 
   if (
-    isFeatureEnabled(FeatureFlag.SQLLAB_BACKEND_PERSISTENCE) &&
+    isFeatureEnabled(FeatureFlag.SqllabBackendPersistence) &&
     latestQuery.state === 'success' &&
     !latestQuery.resultsKey &&
     !latestQuery.results

@@ -23,8 +23,10 @@ import {
   styled,
   SupersetClient,
   t,
+  css,
+  useTheme,
 } from '@superset-ui/core';
-import React, { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, MouseEvent } from 'react';
 import { Link, useHistory } from 'react-router-dom';
 import rison from 'rison';
 import {
@@ -51,12 +53,11 @@ import { TagsList } from 'src/components/Tags';
 import { Tooltip } from 'src/components/Tooltip';
 import { commonMenuData } from 'src/features/home/commonMenuData';
 import { QueryObjectColumns, SavedQueryObject } from 'src/views/CRUD/types';
-import copyTextToClipboard from 'src/utils/copy';
 import Tag from 'src/types/TagType';
 import ImportModelsModal from 'src/components/ImportModal/index';
 import { ModifiedInfo } from 'src/components/AuditInfo';
 import { loadTags } from 'src/components/Tags/utils';
-import Icons from 'src/components/Icons';
+import { Icons } from 'src/components/Icons';
 import { UserWithPermissionsAndRoles } from 'src/types/bootstrapTypes';
 import SavedQueryPreviewModal from 'src/features/queries/SavedQueryPreviewModal';
 import { findPermission } from 'src/utils/findPermission';
@@ -105,6 +106,7 @@ function SavedQueryList({
   addSuccessToast,
   user,
 }: SavedQueryListProps) {
+  const theme = useTheme();
   const {
     state: {
       loading,
@@ -161,8 +163,7 @@ function SavedQueryList({
   const canCreate = hasPerm('can_write');
   const canEdit = hasPerm('can_write');
   const canDelete = hasPerm('can_write');
-  const canExport =
-    hasPerm('can_export') && isFeatureEnabled(FeatureFlag.VERSIONED_EXPORT);
+  const canExport = hasPerm('can_export');
 
   const handleSavedQueryPreview = useCallback(
     (id: number) => {
@@ -199,14 +200,30 @@ function SavedQueryList({
 
   subMenuButtons.push({
     name: (
-      <Link to={withPrefix('/sqllab/?new=true')}>
-        <i className="fa fa-plus" /> {t('Query')}
+      <Link
+        to={withPrefix('/sqllab?new=true')}
+        css={css`
+          display: flex;
+          &:hover {
+            color: currentColor;
+            text-decoration: none;
+          }
+        `}
+      >
+        <Icons.PlusOutlined
+          iconColor={theme.colors.primary.light5}
+          iconSize="m"
+          css={css`
+            margin: auto ${theme.gridUnit * 2}px auto 0;
+          `}
+        />
+        {t('Query')}
       </Link>
     ),
     buttonStyle: 'primary',
   });
 
-  if (canCreate && isFeatureEnabled(FeatureFlag.VERSIONED_EXPORT)) {
+  if (canCreate) {
     subMenuButtons.push({
       name: (
         <Tooltip
@@ -215,7 +232,7 @@ function SavedQueryList({
           placement="bottomRight"
           data-test="import-tooltip-test"
         >
-          <Icons.Import data-test="import-icon" />
+          <Icons.DownloadOutlined data-test="import-icon" />
         </Tooltip>
       ),
       buttonStyle: 'link',
@@ -236,17 +253,31 @@ function SavedQueryList({
   };
 
   const copyQueryLink = useCallback(
-    (id: number) => {
-      const uri = withPrefix(`/sqllab/?savedQueryId=${id}`);
-      copyTextToClipboard(() =>
-        Promise.resolve(`${window.location.origin}${uri}`),
-      )
-        .then(() => {
-          addSuccessToast(t('Link Copied!'));
-        })
-        .catch(() => {
-          addDangerToast(t('Sorry, your browser does not support copying.'));
+    async (savedQuery: SavedQueryObject) => {
+      try {
+        const payload = {
+          dbId: savedQuery.db_id,
+          name: savedQuery.label,
+          schema: savedQuery.schema,
+          catalog: savedQuery.catalog,
+          sql: savedQuery.sql,
+          autorun: false,
+          templateParams: null,
+        };
+
+        const response = await SupersetClient.post({
+          endpoint: '/api/v1/sqllab/permalink',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
+
+        const { url: permalink } = response.json;
+
+        await navigator.clipboard.writeText(permalink);
+        addSuccessToast(t('Link Copied!'));
+      } catch (error) {
+        addDangerToast(t('There was an error generating the permalink.'));
+      }
     },
     [addDangerToast, addSuccessToast],
   );
@@ -300,6 +331,15 @@ function SavedQueryList({
       {
         accessor: 'label',
         Header: t('Name'),
+        Cell: ({
+          row: {
+            original: { id, label },
+          },
+        }: any) => <Link to={`/sqllab?savedQueryId=${id}`}>{label}</Link>,
+      },
+      {
+        accessor: 'description',
+        Header: t('Description'),
       },
       {
         accessor: 'database.database_name',
@@ -366,7 +406,7 @@ function SavedQueryList({
         Header: t('Tags'),
         accessor: 'tags',
         disableSortBy: true,
-        hidden: !isFeatureEnabled(FeatureFlag.TAGGING_SYSTEM),
+        hidden: !isFeatureEnabled(FeatureFlag.TaggingSystem),
       },
       {
         Cell: ({
@@ -386,9 +426,9 @@ function SavedQueryList({
           const handlePreview = () => {
             handleSavedQueryPreview(original.id);
           };
-          const handleEdit = ({ metaKey }: React.MouseEvent) =>
+          const handleEdit = ({ metaKey }: MouseEvent) =>
             openInSqlLab(original.id, Boolean(metaKey));
-          const handleCopy = () => copyQueryLink(original.id);
+          const handleCopy = () => copyQueryLink(original);
           const handleExport = () => handleBulkSavedQueryExport([original]);
           const handleDelete = () => setQueryCurrentlyDeleting(original);
 
@@ -404,28 +444,28 @@ function SavedQueryList({
               label: 'edit-action',
               tooltip: t('Edit query'),
               placement: 'bottom',
-              icon: 'Edit',
+              icon: 'EditOutlined',
               onClick: handleEdit,
             },
             {
               label: 'copy-action',
               tooltip: t('Copy query URL'),
               placement: 'bottom',
-              icon: 'Copy',
+              icon: 'CopyOutlined',
               onClick: handleCopy,
             },
             canExport && {
               label: 'export-action',
               tooltip: t('Export query'),
               placement: 'bottom',
-              icon: 'Share',
+              icon: 'UploadOutlined',
               onClick: handleExport,
             },
             canDelete && {
               label: 'delete-action',
               tooltip: t('Delete query'),
               placement: 'bottom',
-              icon: 'Trash',
+              icon: 'DeleteOutlined',
               onClick: handleDelete,
             },
           ].filter(item => !!item);
@@ -437,7 +477,7 @@ function SavedQueryList({
         disableSortBy: true,
       },
       {
-        accessor: QueryObjectColumns.changed_by,
+        accessor: QueryObjectColumns.ChangedBy,
         hidden: true,
       },
     ],
@@ -447,18 +487,20 @@ function SavedQueryList({
   const filters: Filters = useMemo(
     () => [
       {
-        Header: t('Name'),
+        Header: t('Search'),
         id: 'label',
         key: 'search',
         input: 'search',
-        operator: FilterOperator.allText,
+        operator: FilterOperator.AllText,
+        toolTipDescription:
+          'Searches all text fields: Name, Description, Database & Schema',
       },
       {
         Header: t('Database'),
         key: 'database',
         id: 'database',
         input: 'select',
-        operator: FilterOperator.relationOneMany,
+        operator: FilterOperator.RelationOneMany,
         unfilteredLabel: t('All'),
         fetchSelects: createFetchRelated(
           'saved_query',
@@ -479,7 +521,7 @@ function SavedQueryList({
         id: 'schema',
         key: 'schema',
         input: 'select',
-        operator: FilterOperator.equals,
+        operator: FilterOperator.Equals,
         unfilteredLabel: 'All',
         fetchSelects: createFetchDistinct(
           'saved_query',
@@ -492,14 +534,14 @@ function SavedQueryList({
         ),
         paginate: true,
       },
-      ...((isFeatureEnabled(FeatureFlag.TAGGING_SYSTEM) && canReadTag
+      ...((isFeatureEnabled(FeatureFlag.TaggingSystem) && canReadTag
         ? [
             {
               Header: t('Tag'),
               id: 'tags',
               key: 'tags',
               input: 'select',
-              operator: FilterOperator.savedQueryTags,
+              operator: FilterOperator.SavedQueryTagById,
               fetchSelects: loadTags,
             },
           ]
@@ -509,7 +551,7 @@ function SavedQueryList({
         key: 'changed_by',
         id: 'changed_by',
         input: 'select',
-        operator: FilterOperator.relationOneMany,
+        operator: FilterOperator.RelationOneMany,
         unfilteredLabel: t('All'),
         fetchSelects: createFetchRelated(
           'saved_query',
