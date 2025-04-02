@@ -329,7 +329,7 @@ class Slice(  # pylint: disable=too-many-public-methods
 
     @property
     def edit_url(self) -> str:
-        return url_for("SliceModelView.edit", pk=self.id)
+        return self.url
 
     @property
     def chart(self) -> str:
