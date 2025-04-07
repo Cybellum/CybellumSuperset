@@ -2283,20 +2283,22 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
                     self.get_table_access_error_object(denied)
                 )
 
+        # Commented by Vadym Serdiuk since it raises error for all charts in embedded dashboards
+        #
         # Guest users MUST not modify the payload so it's requesting a
         # different chart or different ad-hoc metrics from what's saved.
-        if (
-            query_context
-            and self.is_guest_user()
-            and query_context_modified(query_context)
-        ):
-            raise SupersetSecurityException(
-                SupersetError(
-                    error_type=SupersetErrorType.DASHBOARD_SECURITY_ACCESS_ERROR,
-                    message=_("Guest user cannot modify chart payload"),
-                    level=ErrorLevel.WARNING,
-                )
-            )
+        # if (
+        #     query_context
+        #     and self.is_guest_user()
+        #     and query_context_modified(query_context)
+        # ):
+        #     raise SupersetSecurityException(
+        #         SupersetError(
+        #             error_type=SupersetErrorType.DASHBOARD_SECURITY_ACCESS_ERROR,
+        #             message=_("Guest user cannot modify chart payload"),
+        #             level=ErrorLevel.WARNING,
+        #         )
+        #     )
 
         if datasource or query_context or viz:
             form_data = None
