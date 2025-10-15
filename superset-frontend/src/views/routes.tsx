@@ -212,6 +212,10 @@ export const routes: Routes = [
     Component: ChartList,
   },
   {
+    path: '/chart/add',
+    Component: ChartCreation,
+  },
+  {
     path: '/tablemodelview/list/',
     Component: DatasetList,
   },
