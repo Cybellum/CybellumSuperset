@@ -150,6 +150,10 @@ export const routes: Routes = [
     Component: ChartCreation,
   },
   {
+    path: withPrefix('/chart/add'),
+    Component: ChartCreation,
+  },
+  {
     path: withPrefix('/chart/list/'),
     Component: ChartList,
   },

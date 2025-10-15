@@ -366,9 +366,7 @@ class SliceAdder extends Component<SliceAdderProps, SliceAdderState> {
             buttonSize="xsmall"
             onClick={() =>
               window.open(
-                withPrefix(
-                  `/chart/add/?dashboard_id=${this.props.dashboardId}`,
-                ),
+                withPrefix(`/chart/add?dashboard_id=${this.props.dashboardId}`),
                 '_blank',
                 'noopener noreferrer',
               )
