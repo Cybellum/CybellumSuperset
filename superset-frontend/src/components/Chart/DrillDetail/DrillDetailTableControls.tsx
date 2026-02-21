@@ -17,17 +17,21 @@
  * under the License.
  */
 
-import { useCallback, useMemo } from 'react';
-import { Tag } from 'src/components/Tag';
 import {
   BinaryQueryObjectFilterClause,
   css,
   isAdhocColumn,
+  QueryFormData,
+  SupersetClient,
   t,
   useTheme,
 } from '@superset-ui/core';
-import RowCountLabel from 'src/components/RowCountLabel';
 import { Icons } from '@superset-ui/core/components/Icons';
+import { useCallback, useMemo } from 'react';
+import RowCountLabel from 'src/components/RowCountLabel';
+import { Tag } from 'src/components/Tag';
+import { buildV1ChartDataPayload } from 'src/explore/exploreUtils';
+import { getDrillPayload } from './utils';
 
 export type TableControlsProps = {
   filters: BinaryQueryObjectFilterClause[];
@@ -35,6 +39,7 @@ export type TableControlsProps = {
   totalCount?: number;
   loading: boolean;
   onReload: () => void;
+  formData?: QueryFormData;
 };
 
 export default function TableControls({
@@ -43,6 +48,7 @@ export default function TableControls({
   totalCount,
   loading,
   onReload,
+  formData,
 }: TableControlsProps) {
   const theme = useTheme();
   const filterMap: Record<string, BinaryQueryObjectFilterClause> = useMemo(
@@ -66,6 +72,37 @@ export default function TableControls({
     },
     [filterMap, setFilters],
   );
+
+  const handleDownloadCSV = useCallback(async () => {
+    if (!formData) {
+      return;
+    }
+
+    try {
+      const drillPayload = getDrillPayload(formData, filters);
+      const queryPayload = await buildV1ChartDataPayload({
+        formData: {
+          ...formData,
+          ...drillPayload,
+        },
+        resultFormat: 'csv',
+        resultType: 'samples',
+        force: false,
+        setDataMask: undefined,
+        ownState: {},
+      });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `drill_detail_${timestamp}.csv`;
+
+      await SupersetClient.postForm('/api/v1/chart/data', {
+        form_data: JSON.stringify(queryPayload),
+        filename,
+      });
+    } catch (error) {
+      console.error('Error downloading CSV:', error);
+    }
+  }, [formData, filters]);
 
   const filterTags = useMemo(
     () =>
@@ -119,9 +156,31 @@ export default function TableControls({
           display: flex;
           align-items: center;
           height: min-content;
+          gap: ${theme.sizeUnit * 3}px;
         `}
       >
         <RowCountLabel loading={loading && !totalCount} rowcount={totalCount} />
+        {formData && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={handleDownloadCSV}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                handleDownloadCSV();
+              }
+            }}
+            css={css`
+              cursor: pointer;
+              color: ${theme.colorPrimary};
+              &:hover {
+                opacity: 0.75;
+              }
+            `}
+          >
+            {t('Download CSV')}
+          </span>
+        )}
         <Icons.ReloadOutlined
           iconColor={theme.colorIcon}
           iconSize="l"

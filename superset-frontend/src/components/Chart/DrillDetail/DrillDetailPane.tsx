@@ -338,6 +338,7 @@ export default function DrillDetailPane({
           totalCount={resultsPage?.total}
           loading={isLoading}
           onReload={handleReload}
+          formData={formData}
         />
       )}
       {tableContent}
