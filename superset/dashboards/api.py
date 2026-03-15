@@ -198,6 +198,7 @@ class DashboardRestApi(BaseSupersetModelRestApi):
         "slug",
         "url",
         "thumbnail_url",
+        "json_metadata",
         "certified_by",
         "certification_details",
         "changed_by.first_name",
