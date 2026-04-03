@@ -29,6 +29,14 @@ server {
     listen 80 default_server;
     server_name  _;
 
+    location ${SUPERSET_APP_ROOT}/ws {
+        proxy_pass http://superset_websocket/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
     location /ws {
         proxy_pass http://superset_websocket;
         proxy_http_version 1.1;

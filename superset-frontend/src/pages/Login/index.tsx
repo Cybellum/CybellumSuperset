@@ -17,19 +17,20 @@
  * under the License.
  */
 
-import { SupersetClient, styled, t, css } from '@superset-ui/core';
+import { SupersetClient, css, styled, t } from '@superset-ui/core';
 import {
   Button,
   Card,
   Flex,
   Form,
+  Icons,
   Input,
   Typography,
-  Icons,
 } from '@superset-ui/core/components';
-import { useState, useMemo } from 'react';
 import { capitalize } from 'lodash/fp';
+import { useMemo, useState } from 'react';
 import getBootstrapData from 'src/utils/getBootstrapData';
+import { makeUrl } from 'src/utils/pathUtils';
 
 type OAuthProvider = {
   name: string;
@@ -94,7 +95,7 @@ export default function Login() {
   );
 
   const buildProviderLoginUrl = (providerName: string) => {
-    const base = `/login/${providerName}`;
+    const base = makeUrl(`/login/${providerName}`);
     return nextUrl
       ? `${base}${base.includes('?') ? '&' : '?'}next=${encodeURIComponent(nextUrl)}`
       : base;
@@ -232,7 +233,7 @@ export default function Login() {
                     <Button
                       block
                       type="default"
-                      href="/register/"
+                      href={makeUrl('/register/')}
                       data-test="register-button"
                     >
                       {t('Register')}

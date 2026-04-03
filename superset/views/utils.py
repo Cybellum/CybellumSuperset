@@ -79,6 +79,11 @@ def redirect_to_login(next_target: str | None = None) -> FlaskResponse:
         else:
             target = request.path
 
+    if has_request_context() and target and target.startswith("/"):
+        script_root = request.script_root.rstrip("/")
+        if script_root and not target.startswith(f"{script_root}/"):
+            target = f"{script_root}{target}"
+
     if target:
         query["next"] = [target]
 

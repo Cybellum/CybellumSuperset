@@ -45,6 +45,7 @@ import { getSliceHeaderTooltip } from 'src/dashboard/util/getSliceHeaderTooltip'
 import { DashboardPageIdContext } from 'src/dashboard/containers/DashboardPage';
 import RowCountLabel from 'src/components/RowCountLabel';
 import { Link } from 'react-router-dom';
+import { makeUrl } from 'src/utils/pathUtils';
 
 const extensionsRegistry = getExtensionsRegistry();
 
@@ -229,7 +230,9 @@ const SliceHeader = forwardRef<HTMLDivElement, SliceHeaderProps>(
       }
     }, [sliceName, width, height, canExplore]);
 
-    const exploreUrl = `/explore/?dashboard_page_id=${dashboardPageId}&slice_id=${slice.slice_id}`;
+    const exploreUrl = makeUrl(
+      `/explore/?dashboard_page_id=${dashboardPageId}&slice_id=${slice.slice_id}`,
+    );
 
     const renderExploreLink = (title: string) => (
       <Link
