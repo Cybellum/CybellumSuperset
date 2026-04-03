@@ -134,6 +134,58 @@ describe('Filter utils', () => {
     it('getSelectExtraFormData - col: "testCol", value: null, emptyFilter: false, inverseSelection: false', () => {
       expect(getSelectExtraFormData('testCol', null, false, false)).toEqual({});
     });
+    it('getSelectExtraFormData - col: "testCol", value: ["value"], emptyFilter: false, inverseSelection: false, isArrayColumn: true', () => {
+      expect(
+        getSelectExtraFormData('testCol', ['value'], false, false, true),
+      ).toEqual({
+        adhoc_filters: [
+          {
+            clause: 'WHERE',
+            expressionType: 'SQL',
+            sqlExpression: `(testCol && ARRAY['value']::varchar[])`,
+          },
+        ],
+      });
+    });
+    it('getSelectExtraFormData - col: "testCol", value: ["value"], emptyFilter: false, inverseSelection: true, isArrayColumn: true', () => {
+      expect(
+        getSelectExtraFormData('testCol', ['value'], false, true, true),
+      ).toEqual({
+        adhoc_filters: [
+          {
+            clause: 'WHERE',
+            expressionType: 'SQL',
+            sqlExpression: `NOT (testCol && ARRAY['value']::varchar[])`,
+          },
+        ],
+      });
+    });
+    it('getSelectExtraFormData - col: "testCol", value: [null, "value"], emptyFilter: false, inverseSelection: false, isArrayColumn: true', () => {
+      expect(
+        getSelectExtraFormData('testCol', [null, 'value'], false, false, true),
+      ).toEqual({
+        adhoc_filters: [
+          {
+            clause: 'WHERE',
+            expressionType: 'SQL',
+            sqlExpression: `(testCol && ARRAY['value']::varchar[] OR testCol IS NULL)`,
+          },
+        ],
+      });
+    });
+    it('getSelectExtraFormData - col: "testCol", value: [1, 2], emptyFilter: false, inverseSelection: false, isArrayColumn: true', () => {
+      expect(
+        getSelectExtraFormData('testCol', [1, 2], false, false, true, 'number'),
+      ).toEqual({
+        adhoc_filters: [
+          {
+            clause: 'WHERE',
+            expressionType: 'SQL',
+            sqlExpression: '(testCol && ARRAY[1, 2]::numeric[])',
+          },
+        ],
+      });
+    });
   });
 
   describe('getDataRecordFormatter', () => {

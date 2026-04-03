@@ -17,37 +17,77 @@
  * under the License.
  */
 /* eslint-disable no-param-reassign */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppSection,
   DataMask,
   ensureIsArray,
   ExtraFormData,
+  finestTemporalGrainFormatter,
   GenericDataType,
   getColumnLabel,
   JsonObject,
-  finestTemporalGrainFormatter,
+  styled,
   t,
   tn,
-  styled,
 } from '@superset-ui/core';
-import { debounce, isUndefined } from 'lodash';
-import { useImmerReducer } from 'use-immer';
 import {
+  Constants,
   FormItem,
   LabeledValue,
   Select,
   Space,
-  Constants,
 } from '@superset-ui/core/components';
 import {
   hasOption,
   propertyComparator,
 } from '@superset-ui/core/components/Select/utils';
+import { debounce, isUndefined } from 'lodash';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FilterBarOrientation } from 'src/dashboard/types';
+import { useImmerReducer } from 'use-immer';
 import { getDataRecordFormatter, getSelectExtraFormData } from '../../utils';
 import { FilterPluginStyle, StatusMessage } from '../common';
 import { PluginFilterSelectProps, SelectValue } from './types';
+
+const getParsedArrayValues = (value: unknown): unknown[] | null => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const inferArrayValueType = (
+  values: unknown[],
+): 'string' | 'number' | 'boolean' => {
+  const firstValue = values.find(
+    item => item !== null && item !== undefined,
+  ) as unknown;
+
+  if (typeof firstValue === 'number') {
+    return 'number';
+  }
+
+  if (typeof firstValue === 'boolean') {
+    return 'boolean';
+  }
+
+  return 'string';
+};
 
 type DataMaskAction =
   | { type: 'ownState'; ownState: JsonObject }
@@ -158,6 +198,18 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
     filterState,
   });
   const datatype: GenericDataType = coltypeMap[col];
+  const isArrayColumn = useMemo(
+    () => data.some(row => !!getParsedArrayValues(row[col])),
+    [data, col],
+  );
+  const arrayValues = useMemo(
+    () => data.flatMap(row => getParsedArrayValues(row[col]) ?? []),
+    [data, col],
+  );
+  const arrayValueType = useMemo(
+    () => inferArrayValueType(arrayValues),
+    [arrayValues],
+  );
   const labelFormatter = useMemo(
     () =>
       getDataRecordFormatter({
@@ -208,6 +260,8 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
           values,
           emptyFilter,
           excludeFilterValues && inverseSelection,
+          isArrayColumn,
+          arrayValueType,
         ),
         filterState: {
           ...filterState,
@@ -234,6 +288,8 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
       enableEmptyFilter,
       inverseSelection,
       excludeFilterValues,
+      isArrayColumn,
+      arrayValueType,
       JSON.stringify(filterState),
       labelFormatter,
     ],
@@ -279,11 +335,6 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
     [updateDataMask, formData.nativeFilterId, clearAllTrigger],
   );
 
-  const placeholderText =
-    data.length === 0
-      ? t('No data')
-      : tn('%s option', '%s options', data.length, data.length);
-
   const formItemExtra = useMemo(() => {
     if (filterState.validateMessage) {
       return (
@@ -295,17 +346,51 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
     return undefined;
   }, [filterState.validateMessage, filterState.validateStatus]);
 
-  const uniqueOptions = useMemo(() => {
-    const allOptions = new Set([...data.map(el => el[col])]);
-    return [...allOptions].map((value: string) => ({
+  const uniqueOptions = useMemo<any[]>(() => {
+    const flattenedValues = data.flatMap(el => {
+      const value = el[col];
+      const parsedValues = getParsedArrayValues(value);
+      if (parsedValues) {
+        return parsedValues;
+      }
+      return [value];
+    });
+
+    const uniqueValues = new Map<
+      string,
+      string | number | bigint | boolean | null
+    >();
+    flattenedValues.forEach(value => {
+      const normalizedValue = value as
+        | string
+        | number
+        | bigint
+        | boolean
+        | null;
+      const key =
+        typeof normalizedValue === 'string'
+          ? `str:${normalizedValue}`
+          : typeof normalizedValue === 'bigint'
+            ? `bigint:${normalizedValue.toString()}`
+            : JSON.stringify(normalizedValue);
+      if (!uniqueValues.has(key)) {
+        uniqueValues.set(key, normalizedValue);
+      }
+    });
+
+    return [...uniqueValues.values()].map(value => ({
       label: labelFormatter(value, datatype),
       value,
       isNewOption: false,
     }));
   }, [data, datatype, col, labelFormatter]);
 
-  const options = useMemo(() => {
-    if (search && !multiSelect && !hasOption(search, uniqueOptions, true)) {
+  const options = useMemo<any[]>(() => {
+    if (
+      search &&
+      !multiSelect &&
+      !hasOption(search, uniqueOptions as any, true)
+    ) {
       uniqueOptions.unshift({
         label: search,
         value: search,
@@ -314,6 +399,16 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
     }
     return uniqueOptions;
   }, [multiSelect, search, uniqueOptions]);
+
+  const placeholderText =
+    uniqueOptions.length === 0
+      ? t('No data')
+      : tn(
+          '%s option',
+          '%s options',
+          uniqueOptions.length,
+          uniqueOptions.length,
+        );
 
   const sortComparator = useCallback(
     (a: LabeledValue, b: LabeledValue) => {
@@ -472,6 +567,8 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
           filterState.value,
           !filterState.value?.length,
           excludeFilterValues && inverseSelection,
+          isArrayColumn,
+          arrayValueType,
         ),
         filterState: {
           ...(filterState as {
@@ -484,7 +581,7 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
       });
       prevExcludeFilterValues.current = excludeFilterValues;
     }
-  }, [excludeFilterValues]);
+  }, [excludeFilterValues, isArrayColumn, arrayValueType]);
 
   const handleExclusionToggle = (value: string) => {
     setExcludeFilterValues(value === 'true');
@@ -539,7 +636,7 @@ export default function PluginFilterSelect(props: PluginFilterSelectProps) {
             loading={isRefreshing}
             oneLine={filterBarOrientation === FilterBarOrientation.Horizontal}
             invertSelection={inverseSelection && excludeFilterValues}
-            options={options}
+            options={options as any}
             sortComparator={sortComparator}
             onOpenChange={setFilterActive}
             className="select-container"

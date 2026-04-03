@@ -18,11 +18,11 @@
  */
 import {
   DataRecordValue,
+  ExtraFormData,
   GenericDataType,
   NumberFormatter,
   QueryObjectFilterClause,
   TimeFormatter,
-  ExtraFormData,
 } from '@superset-ui/core';
 import { FALSE_STRING, NULL_STRING, TRUE_STRING } from 'src/utils/common';
 import {
@@ -30,11 +30,59 @@ import {
   ExpressionTypes,
 } from '../explore/components/controls/FilterControl/types';
 
+const getArraySelectSqlExpression = (
+  col: string,
+  value: (string | number | boolean | null)[],
+  shouldExcludeFilter: boolean,
+  arrayValueType: 'string' | 'number' | 'boolean' = 'string',
+) => {
+  const nonNullValues = value.filter(
+    (item): item is string | number | boolean => item !== null,
+  );
+  const quotedValues = nonNullValues.map(item => {
+    if (typeof item === 'number') {
+      return `${item}`;
+    }
+    if (typeof item === 'boolean') {
+      return item ? 'TRUE' : 'FALSE';
+    }
+    const escaped = item.replace(/'/g, "''");
+    return `'${escaped}'`;
+  });
+  const predicates: string[] = [];
+  const arrayCast =
+    arrayValueType === 'number'
+      ? 'float[]'
+      : arrayValueType === 'boolean'
+        ? 'boolean[]'
+        : 'varchar[]';
+
+  if (quotedValues.length) {
+    predicates.push(
+      `${col}::${arrayCast} && ARRAY[${quotedValues.join(', ')}]::${arrayCast}`,
+    );
+  }
+
+  if (value.includes(null)) {
+    predicates.push(`${col} IS NULL`);
+  }
+
+  if (!predicates.length) {
+    return '';
+  }
+
+  const expression = `(${predicates.join(' OR ')})`;
+
+  return shouldExcludeFilter ? `NOT ${expression}` : expression;
+};
+
 export const getSelectExtraFormData = (
   col: string,
   value?: null | (string | number | boolean | null)[],
   emptyFilter = false,
   shouldExcludeFilter = false,
+  isArrayColumn = false,
+  arrayValueType: 'string' | 'number' | 'boolean' = 'string',
 ): ExtraFormData => {
   const extra: ExtraFormData = {};
   if (emptyFilter) {
@@ -46,14 +94,33 @@ export const getSelectExtraFormData = (
       },
     ];
   } else if (value !== undefined && value !== null && value.length !== 0) {
-    extra.filters = [
-      {
+    if (isArrayColumn) {
+      const sqlExpression = getArraySelectSqlExpression(
         col,
-        op: shouldExcludeFilter ? ('NOT IN' as const) : ('IN' as const),
-        // @ts-ignore
-        val: value,
-      },
-    ];
+        value,
+        shouldExcludeFilter,
+        arrayValueType,
+      );
+
+      if (sqlExpression) {
+        extra.adhoc_filters = [
+          {
+            expressionType: ExpressionTypes.Sql,
+            clause: Clauses.Where,
+            sqlExpression,
+          },
+        ];
+      }
+    } else {
+      extra.filters = [
+        {
+          col,
+          op: shouldExcludeFilter ? ('NOT IN' as const) : ('IN' as const),
+          // @ts-ignore
+          val: value,
+        },
+      ];
+    }
   }
   return extra;
 };
