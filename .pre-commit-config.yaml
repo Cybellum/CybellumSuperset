@@ -96,12 +96,14 @@ repos:
     hooks:
     - id: pylint
       name: pylint with custom Superset plugins
-      entry: bash
-      language: system
+      entry: pylint
+      language: python
       types: [python]
       exclude: ^(tests/|superset/migrations/|scripts/|RELEASING/|docker/)
+      additional_dependencies:
+        - sqlglot>=20.0.0  # Ensure it's a version that includes singlestore
+        - .                # If the plugin is part of the current repo
       args:
-        - -c
         - |
           TARGET_BRANCH=${GITHUB_BASE_REF:-master}
           git fetch origin "$TARGET_BRANCH"
