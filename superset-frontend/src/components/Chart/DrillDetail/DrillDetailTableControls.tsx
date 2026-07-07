@@ -84,6 +84,7 @@ export default function TableControls({
         formData: {
           ...formData,
           ...drillPayload,
+          row_limit: 100_000_000,
         },
         resultFormat: 'csv',
         resultType: 'samples',
