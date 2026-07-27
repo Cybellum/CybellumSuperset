@@ -80,6 +80,7 @@ class QueryContextFactory:  # pylint: disable=too-few-public-methods
                     result_type,
                     datasource=datasource,
                     server_pagination=server_pagination,
+                    result_format=result_format,
                     **query_obj,
                 ),
             )

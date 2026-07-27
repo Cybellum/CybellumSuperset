@@ -20,7 +20,14 @@ import contextlib
 import logging
 from typing import Any, TYPE_CHECKING
 
-from flask import current_app as app, g, make_response, request, Response
+from flask import (
+    current_app as app,
+    g,
+    make_response,
+    request,
+    Response,
+    stream_with_context,
+)
 from flask_appbuilder.api import expose, protect
 from flask_babel import gettext as _
 from marshmallow import ValidationError
@@ -371,6 +378,8 @@ class ChartDataRestApi(ChartRestApi):
             if len(result["queries"]) == 1:
                 # return single query results
                 data = result["queries"][0]["data"]
+                if not isinstance(data, (str, bytes)):
+                    data = stream_with_context(data)
                 if is_csv_format:
                     return CsvResponse(data, headers=generate_download_headers("csv"))
 

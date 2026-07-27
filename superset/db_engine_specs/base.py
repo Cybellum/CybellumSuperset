@@ -346,6 +346,7 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
     # Does database support join-free timeslot grouping
     time_groupby_inline = False
     limit_method = LimitMethod.FORCE_LIMIT
+    supports_offset_pagination = False
     supports_multivalues_insert = False
     allows_joins = True
     allows_subqueries = True
