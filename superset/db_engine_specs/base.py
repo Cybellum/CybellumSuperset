@@ -1404,8 +1404,14 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
 
             sql> set search_path = my_schema;
 
+        An additional ad-hoc pre-session query can be configured per-database via the
+        ``pre_query_sql`` key in the database's ``extra`` field; when set, it's appended
+        to the list of pre-session queries returned by this method (and its overrides).
         """
-        return []
+        prequeries = []
+        if pre_query_sql := database.get_extra().get("pre_query_sql"):
+            prequeries.append(pre_query_sql)
+        return prequeries
 
     @classmethod
     def patch(cls) -> None:

@@ -162,7 +162,10 @@ extra_description = markdown(
     "7. The ``disable_drill_to_detail`` field is a boolean specifying whether or not"
     "drill to detail is disabled for the database."
     "8. The ``allow_multi_catalog`` indicates if the database allows changing "
-    "the default catalog when running queries and creating datasets.",
+    "the default catalog when running queries and creating datasets."
+    "9. The ``pre_query_sql`` field is a string containing a SQL query that "
+    "will be executed at the start of every session for this database (e.g. "
+    "to set a default schema via ``set search_path``).",
     True,
 )
 get_export_ids_schema = {"type": "array", "items": {"type": "integer"}}
@@ -833,6 +836,7 @@ class ImportV1DatabaseExtraSchema(Schema):
     allow_multi_catalog = fields.Boolean(required=False)
     version = fields.String(required=False, allow_none=True)
     schema_options = fields.Dict(keys=fields.Str(), values=fields.Raw())
+    pre_query_sql = fields.String(required=False, allow_none=True)
 
 
 class ImportV1DatabaseSchema(Schema):

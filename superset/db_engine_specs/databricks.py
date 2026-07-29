@@ -541,6 +541,7 @@ class DatabricksNativeEngineSpec(DatabricksDynamicBaseEngineSpec):
         if schema:
             schema = f"`{schema}`" if not schema.startswith("`") else schema
             prequeries.append(f"USE SCHEMA {schema}")
+        prequeries.extend(super().get_prequeries(database, catalog, schema))
         return prequeries
 
     @classmethod

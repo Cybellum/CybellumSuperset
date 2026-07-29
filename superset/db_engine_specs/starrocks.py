@@ -241,10 +241,11 @@ class StarRocksEngineSpec(MySQLEngineSpec):
             sql> set search_path = my_schema;
 
         """
+        prequeries = []
         if database.impersonate_user:
             username = database.get_effective_user(database.url_object)
 
             if username:
-                return [f'EXECUTE AS "{username}" WITH NO REVERT;']
-
-        return []
+                prequeries.append(f'EXECUTE AS "{username}" WITH NO REVERT;')
+        prequeries.extend(super().get_prequeries(database, catalog, schema))
+        return prequeries
