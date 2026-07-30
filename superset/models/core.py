@@ -25,7 +25,6 @@ import builtins
 import logging
 import resource
 import textwrap
-import traceback
 from ast import literal_eval
 from contextlib import closing, contextmanager, nullcontext, suppress
 from copy import deepcopy
@@ -723,9 +722,8 @@ class Database(Model, AuditMixinNullable, ImportExportMixin):  # pylint: disable
                 sql,
             )
             logger.info(
-                "Dataframe stream caller database_id=%s stack=%s",
+                "Dataframe stream caller database_id=%s",
                 self.id,
-                "".join(traceback.format_stack()[:-1][-12:]),
             )
             for index, statement in enumerate(statements):
                 sql_ = self.mutate_sql_based_on_config(
