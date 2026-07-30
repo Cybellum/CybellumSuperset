@@ -976,7 +976,7 @@ ALLOWED_EXTENSIONS = {*EXCEL_EXTENSIONS, *CSV_EXTENSIONS, *COLUMNAR_EXTENSIONS}
 # CSV Options: key/value pairs that will be passed as argument to DataFrame.to_csv
 # method.
 # note: index option should not be overridden
-CSV_EXPORT = {"encoding": "utf-8-sig"}
+CSV_EXPORT = {"encoding": "utf-8-sig", "chunksize": 1000}
 
 # Excel Options: key/value pairs that will be passed as argument to DataFrame.to_excel
 # method.

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import resource
 import textwrap
 from ast import literal_eval
 from contextlib import closing, contextmanager, nullcontext, suppress
@@ -30,7 +31,7 @@ from copy import deepcopy
 from datetime import datetime
 from functools import lru_cache
 from inspect import signature
-from typing import Any, Callable, cast, Optional, TYPE_CHECKING
+from typing import Any, Callable, cast, Iterator, Optional, TYPE_CHECKING
 
 import numpy
 import pandas as pd
@@ -92,6 +93,15 @@ from superset.utils.oauth2 import (
 
 metadata = Model.metadata  # pylint: disable=no-member
 logger = logging.getLogger(__name__)
+
+
+def _current_rss_mb() -> float:
+    """
+    Return the process resident set size in MiB, for memory diagnostics.
+    On Linux, ru_maxrss is reported in KiB.
+    """
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
 
 if TYPE_CHECKING:
     from superset.databases.ssh_tunnel.models import SSHTunnel
@@ -670,24 +680,26 @@ class Database(Model, AuditMixinNullable, ImportExportMixin):  # pylint: disable
             )
         return sql_
 
-    def get_df(
+    def stream_dataframe_batches(
         self,
         sql: str,
         catalog: str | None = None,
         schema: str | None = None,
-        mutator: Callable[[pd.DataFrame], None] | None = None,
-    ) -> pd.DataFrame:
+        *,
+        chunk_size: int | None = None,
+        mutator: Callable[[pd.DataFrame], pd.DataFrame | None] | None = None,
+    ) -> Iterator[pd.DataFrame]:
         script = SQLScript(sql, self.db_engine_spec.engine)
         with self.get_sqla_engine(catalog=catalog, schema=schema) as engine:
             engine_url = engine.url
 
         log_query = app.config["QUERY_LOGGER"]
 
-        def _log_query(sql: str) -> None:
+        def _log_query(executed_sql: str) -> None:
             if log_query:
                 log_query(
                     engine_url,
-                    sql,
+                    executed_sql,
                     schema,
                     __name__,
                     security_manager,
@@ -695,28 +707,368 @@ class Database(Model, AuditMixinNullable, ImportExportMixin):  # pylint: disable
 
         with self.get_raw_connection(catalog=catalog, schema=schema) as conn:
             cursor = conn.cursor()
-            df = None
-            for i, statement in enumerate(script.statements):
+            statements = script.statements
+            logger.info(
+                "Starting dataframe stream database_id=%s catalog=%s schema=%s "
+                "statement_count=%s chunk_size=%s db_engine_spec=%s rss_mb=%.1f "
+                "sql=%s",
+                self.id,
+                catalog,
+                schema,
+                len(statements),
+                chunk_size,
+                self.db_engine_spec.__name__,
+                _current_rss_mb(),
+                sql,
+            )
+            logger.info(
+                "Dataframe stream caller database_id=%s",
+                self.id,
+            )
+            for index, statement in enumerate(statements):
                 sql_ = self.mutate_sql_based_on_config(
                     statement.format(),
                     is_split=True,
                 )
-                _log_query(sql_)
-                with event_logger.log_context(
-                    action="execute_sql",
-                    database=self,
-                    object_ref=__name__,
-                ):
-                    self.db_engine_spec.execute(cursor, sql_, self)
+                statement_number = index + 1
+                is_last_statement = index == len(statements) - 1
+                use_offset_pagination = (
+                    is_last_statement
+                    and chunk_size
+                    and chunk_size > 0
+                    and self.db_engine_spec.supports_offset_pagination
+                    and statement.is_select()
+                )
 
-                rows = self.fetch_rows(cursor, i == len(script.statements) - 1)
-                if rows is not None:
+                if not use_offset_pagination:
+                    logger.info(
+                        "Executing dataframe stream statement database_id=%s "
+                        "statement=%s/%s sql_length=%s rss_mb=%.1f",
+                        self.id,
+                        statement_number,
+                        len(statements),
+                        len(sql_),
+                        _current_rss_mb(),
+                    )
+                    _log_query(sql_)
+                    with event_logger.log_context(
+                        action="execute_sql",
+                        database=self,
+                        object_ref=__name__,
+                    ):
+                        self.db_engine_spec.execute(cursor, sql_, self)
+                    logger.info(
+                        "Executed dataframe stream statement database_id=%s "
+                        "statement=%s/%s rss_mb=%.1f",
+                        self.id,
+                        statement_number,
+                        len(statements),
+                        _current_rss_mb(),
+                    )
+                    logger.info(
+                        "Cursor state after execute database_id=%s statement=%s/%s "
+                        "cursor_description_columns=%s cursor_rowcount=%s",
+                        self.id,
+                        statement_number,
+                        len(statements),
+                        len(cursor.description) if cursor.description else 0,
+                        getattr(cursor, "rowcount", "unknown"),
+                    )
+
+                if not is_last_statement:
+                    logger.info(
+                        "Consuming non-result statement database_id=%s statement=%s/%s",
+                        self.id,
+                        statement_number,
+                        len(statements),
+                    )
+                    cursor.fetchall()
+                    continue
+
+                if use_offset_pagination:
+                    offset = 0
+                    batch_number = 0
+                    total_rows = 0
+                    yielded = False
+                    while True:
+                        paginated_sql = (
+                            f"SELECT * FROM (\n{sql_}\n) AS "
+                            f"__superset_stream_page LIMIT {chunk_size} "
+                            f"OFFSET {offset}"
+                        )
+                        logger.info(
+                            "Executing paginated dataframe stream page "
+                            "database_id=%s batch=%s offset=%s chunk_size=%s "
+                            "rss_mb=%.1f",
+                            self.id,
+                            batch_number + 1,
+                            offset,
+                            chunk_size,
+                            _current_rss_mb(),
+                        )
+                        _log_query(paginated_sql)
+                        with event_logger.log_context(
+                            action="execute_sql",
+                            database=self,
+                            object_ref=__name__,
+                        ):
+                            self.db_engine_spec.execute(cursor, paginated_sql, self)
+                        page_rows = self.fetch_rows(cursor, True) or []
+                        logger.info(
+                            "Fetched paginated dataframe stream page "
+                            "database_id=%s batch=%s page_rows=%s rss_mb=%.1f",
+                            self.id,
+                            batch_number + 1,
+                            len(page_rows),
+                            _current_rss_mb(),
+                        )
+                        if not page_rows:
+                            if not yielded:
+                                empty_df = self.load_into_dataframe(
+                                    cursor.description, []
+                                )
+                                empty_df = self.post_process_df(empty_df)
+                                if mutator:
+                                    mutated = mutator(empty_df)
+                                    if mutated is not None:
+                                        empty_df = mutated
+                                yield empty_df
+                            break
+
+                        batch_number += 1
+                        total_rows += len(page_rows)
+                        df_chunk = self.load_into_dataframe(
+                            cursor.description, page_rows
+                        )
+                        df_chunk = self.post_process_df(df_chunk)
+                        if mutator:
+                            mutated = mutator(df_chunk)
+                            if mutated is not None:
+                                df_chunk = mutated
+                        if df_chunk is not None:
+                            yielded = True
+                            logger.info(
+                                "Yielding paginated dataframe batch "
+                                "database_id=%s batch=%s rows=%s columns=%s "
+                                "total_rows=%s rss_mb=%.1f",
+                                self.id,
+                                batch_number,
+                                len(df_chunk.index),
+                                len(df_chunk.columns),
+                                total_rows,
+                                _current_rss_mb(),
+                            )
+                            yield df_chunk
+                        if len(page_rows) < chunk_size:
+                            break
+                        offset += chunk_size
+                    continue
+
+                if chunk_size and chunk_size > 0:
+                    cursor.arraysize = chunk_size
+                    yielded = False
+                    batch_number = 0
+                    total_rows = 0
+                    while True:
+                        logger.info(
+                            "Fetching dataframe batch database_id=%s batch=%s "
+                            "chunk_size=%s rows_fetched=%s rss_mb=%.1f",
+                            self.id,
+                            batch_number + 1,
+                            chunk_size,
+                            total_rows,
+                            _current_rss_mb(),
+                        )
+                        rows = cursor.fetchmany(chunk_size)
+                        logger.info(
+                            "Fetched dataframe batch database_id=%s batch=%s "
+                            "batch_rows=%s rss_mb=%.1f",
+                            self.id,
+                            batch_number + 1,
+                            len(rows),
+                            _current_rss_mb(),
+                        )
+                        if not rows:
+                            logger.info(
+                                "Finished fetching dataframe batches database_id=%s "
+                                "batch_count=%s total_rows=%s rss_mb=%.1f",
+                                self.id,
+                                batch_number,
+                                total_rows,
+                                _current_rss_mb(),
+                            )
+                            if not yielded:
+                                empty_df = self.load_into_dataframe(
+                                    cursor.description, []
+                                )
+                                empty_df = self.post_process_df(empty_df)
+                                if mutator:
+                                    mutated = mutator(empty_df)
+                                    if mutated is not None:
+                                        empty_df = mutated
+                                yield empty_df
+                            break
+
+                        batch_number += 1
+                        total_rows += len(rows)
+                        logger.info(
+                            "Converting dataframe batch database_id=%s batch=%s "
+                            "batch_rows=%s total_rows=%s rss_mb=%.1f",
+                            self.id,
+                            batch_number,
+                            len(rows),
+                            total_rows,
+                            _current_rss_mb(),
+                        )
+                        df_chunk = self.load_into_dataframe(cursor.description, rows)
+                        logger.info(
+                            "Loaded dataframe batch database_id=%s batch=%s "
+                            "rss_mb=%.1f",
+                            self.id,
+                            batch_number,
+                            _current_rss_mb(),
+                        )
+                        df_chunk = self.post_process_df(df_chunk)
+                        if mutator:
+                            mutated = mutator(df_chunk)
+                            if mutated is not None:
+                                df_chunk = mutated
+                        if df_chunk is not None:
+                            yielded = True
+                            logger.info(
+                                "Yielding dataframe batch database_id=%s batch=%s "
+                                "rows=%s columns=%s total_rows=%s rss_mb=%.1f",
+                                self.id,
+                                batch_number,
+                                len(df_chunk.index),
+                                len(df_chunk.columns),
+                                total_rows,
+                                _current_rss_mb(),
+                            )
+                            yield df_chunk
+                            logger.info(
+                                "Resumed after yielding dataframe batch "
+                                "database_id=%s batch=%s rss_mb=%.1f",
+                                self.id,
+                                batch_number,
+                                _current_rss_mb(),
+                            )
+                else:
+                    logger.info(
+                        "Fetching complete dataframe result database_id=%s rss_mb=%.1f",
+                        self.id,
+                        _current_rss_mb(),
+                    )
+                    rows = self.fetch_rows(cursor, True)
+                    if rows is None:
+                        logger.info(
+                            "No rows returned for statement database_id=%s "
+                            "statement=%s/%s rss_mb=%.1f",
+                            self.id,
+                            statement_number,
+                            len(statements),
+                            _current_rss_mb(),
+                        )
+                        continue
+                    logger.info(
+                        "Fetched complete dataframe result database_id=%s rows=%s "
+                        "rss_mb=%.1f",
+                        self.id,
+                        len(rows),
+                        _current_rss_mb(),
+                    )
                     df = self.load_into_dataframe(cursor.description, rows)
+                    logger.info(
+                        "Loaded complete dataframe result database_id=%s rows=%s "
+                        "columns=%s rss_mb=%.1f",
+                        self.id,
+                        len(df.index),
+                        len(df.columns),
+                        _current_rss_mb(),
+                    )
+                    df = self.post_process_df(df)
+                    logger.info(
+                        "Post-processed complete dataframe result database_id=%s "
+                        "rss_mb=%.1f",
+                        self.id,
+                        _current_rss_mb(),
+                    )
+                    if mutator:
+                        mutated_df = mutator(df)
+                        if mutated_df is not None:
+                            df = mutated_df
+                        logger.info(
+                            "Applied mutator to complete dataframe result "
+                            "database_id=%s rss_mb=%.1f",
+                            self.id,
+                            _current_rss_mb(),
+                        )
+                    logger.info(
+                        "Yielding complete dataframe result database_id=%s rows=%s "
+                        "columns=%s rss_mb=%.1f",
+                        self.id,
+                        len(df.index),
+                        len(df.columns),
+                        _current_rss_mb(),
+                    )
+                    yield df
+                    logger.info(
+                        "Resumed after yielding complete dataframe result "
+                        "database_id=%s rss_mb=%.1f",
+                        self.id,
+                        _current_rss_mb(),
+                    )
 
-            if mutator:
-                df = mutator(df)
+    def get_df(
+        self,
+        sql: str,
+        catalog: str | None = None,
+        schema: str | None = None,
+        mutator: Callable[[pd.DataFrame], None] | None = None,
+    ) -> pd.DataFrame:
+        chunk_size = app.config["CSV_EXPORT"].get("chunksize")
+        logger.info(
+            "get_df starting database_id=%s catalog=%s schema=%s chunk_size=%s "
+            "rss_mb=%.1f",
+            self.id,
+            catalog,
+            schema,
+            chunk_size,
+            _current_rss_mb(),
+        )
+        chunks = list(
+            self.stream_dataframe_batches(
+                sql,
+                catalog,
+                schema,
+                chunk_size=chunk_size,
+                mutator=cast(
+                    Callable[[pd.DataFrame], pd.DataFrame | None] | None,
+                    mutator,
+                ),
+            )
+        )
+        logger.info(
+            "get_df collected batches database_id=%s batch_count=%s rss_mb=%.1f",
+            self.id,
+            len(chunks),
+            _current_rss_mb(),
+        )
 
-            return self.post_process_df(df)
+        if not chunks:
+            return pd.DataFrame()
+        if len(chunks) == 1:
+            result = chunks[0]
+        else:
+            result = pd.concat(chunks)
+        logger.info(
+            "get_df finished database_id=%s rows=%s columns=%s rss_mb=%.1f",
+            self.id,
+            len(result.index),
+            len(result.columns),
+            _current_rss_mb(),
+        )
+        return result
 
     @event_logger.log_this
     def fetch_rows(self, cursor: Any, last: bool) -> list[tuple[Any, ...]] | None:

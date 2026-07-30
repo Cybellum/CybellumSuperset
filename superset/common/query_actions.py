@@ -17,21 +17,33 @@
 from __future__ import annotations
 
 import copy
+import itertools
+import logging
 from typing import Any, Callable, TYPE_CHECKING
 
+from flask import current_app
 from flask_babel import _
 
-from superset.common.chart_data import ChartDataResultType
+from superset.common.chart_data import ChartDataResultFormat, ChartDataResultType
 from superset.common.db_query_status import QueryStatus
 from superset.connectors.sqla.models import BaseDatasource
-from superset.exceptions import QueryObjectValidationError, SupersetParseError
+from superset.exceptions import (
+    QueryObjectValidationError,
+    SupersetErrorException,
+    SupersetErrorsException,
+    SupersetParseError,
+)
+from superset.utils import csv
 from superset.utils.core import (
+    error_msg_from_exception,
     extract_column_dtype,
     extract_dataframe_dtypes,
     ExtraFiltersReasonType,
     get_column_name,
     get_time_filter_status,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from superset.common.query_context import QueryContext
@@ -98,6 +110,114 @@ def _get_query(
     return result
 
 
+_STREAMABLE_CSV_RESULT_TYPES = {
+    ChartDataResultType.SAMPLES,
+    ChartDataResultType.DRILL_DETAIL,
+}
+
+
+def _can_stream_csv(
+    query_context: QueryContext,
+    query_obj: QueryObject,
+    result_type: ChartDataResultType,
+) -> bool:
+    datasource = _get_datasource(query_context, query_obj)
+    is_streamable_type = result_type in _STREAMABLE_CSV_RESULT_TYPES
+    is_csv_format = query_context.result_format == ChartDataResultFormat.CSV
+    has_post_processing = bool(query_obj.post_processing)
+    has_time_offsets = bool(query_obj.time_offsets)
+    has_batches = hasattr(datasource, "get_df_batches")
+    eligible = (
+        is_streamable_type
+        and is_csv_format
+        and not has_post_processing
+        and not has_time_offsets
+        and has_batches
+    )
+    logger.info(
+        "CSV streaming eligibility result_type=%s format=%s eligible=%s "
+        "has_post_processing=%s has_time_offsets=%s has_batches=%s",
+        result_type,
+        query_context.result_format,
+        eligible,
+        has_post_processing,
+        has_time_offsets,
+        has_batches,
+    )
+    if not eligible:
+        logger.info(
+            "CSV streaming skipped datasource=%s streamable_type=%s",
+            type(datasource).__name__,
+            is_streamable_type,
+        )
+    return eligible
+
+
+def _get_full_streaming_csv(
+    query_context: QueryContext,
+    query_obj: QueryObject,
+    result_type: ChartDataResultType,
+) -> dict[str, Any]:
+    datasource = _get_datasource(query_context, query_obj)
+    chunk_size = current_app.config["CSV_EXPORT"].get("chunksize")
+    logger.info(
+        "Starting streaming CSV export datasource=%s result_type=%s chunk_size=%s",
+        type(datasource).__name__,
+        result_type,
+        chunk_size,
+    )
+    payload: dict[str, Any] = {
+        "data": None,
+        "result_format": query_context.result_format,
+        "query": "",
+        "status": QueryStatus.SUCCESS,
+        "error": None,
+        "stacktrace": None,
+        "rowcount": None,
+        "sql_rowcount": None,
+        "colnames": [],
+        "indexnames": [],
+        "coltypes": [],
+        "applied_filters": [],
+        "rejected_filters": [],
+        "from_dttm": query_obj.from_dttm,
+        "to_dttm": query_obj.to_dttm,
+        "cache_key": None,
+        "cached_dttm": None,
+        "cache_timeout": None,
+        "is_cached": False,
+    }
+    try:
+        batches, sql = datasource.get_df_batches(
+            query_obj.to_dict(), chunk_size=chunk_size
+        )
+        payload["query"] = sql
+        csv_chunks = csv.stream_escaped_csv(
+            batches, index=False, **current_app.config["CSV_EXPORT"]
+        )
+        first_chunk = next(csv_chunks, "")
+        payload["data"] = itertools.chain([first_chunk], csv_chunks)
+    except (SupersetErrorException, SupersetErrorsException):
+        raise
+    except Exception as ex:  # pylint: disable=broad-except
+        logger.warning("Streaming CSV export failed", exc_info=True)
+        payload["status"] = QueryStatus.FAILED
+        payload["error"] = error_msg_from_exception(ex)
+
+    if (
+        result_type == ChartDataResultType.RESULTS
+        and payload["status"] != QueryStatus.FAILED
+    ):
+        return {
+            "data": payload["data"],
+            "colnames": payload["colnames"],
+            "coltypes": payload["coltypes"],
+            "rowcount": payload["rowcount"],
+            "sql_rowcount": payload["sql_rowcount"],
+        }
+    return payload
+
+
 def _get_full(
     query_context: QueryContext,
     query_obj: QueryObject,
@@ -105,6 +225,10 @@ def _get_full(
 ) -> dict[str, Any]:
     datasource = _get_datasource(query_context, query_obj)
     result_type = query_obj.result_type or query_context.result_type
+
+    if _can_stream_csv(query_context, query_obj, result_type):
+        return _get_full_streaming_csv(query_context, query_obj, result_type)
+
     payload = query_context.get_df_payload(query_obj, force_cached=force_cached)
     df = payload["df"]
     status = payload["status"]
@@ -164,6 +288,8 @@ def _get_samples(
     query_obj.columns = qry_obj_cols
     query_obj.from_dttm = None
     query_obj.to_dttm = None
+    if query_context.result_format not in ChartDataResultFormat.table_like():
+        query_obj.row_limit = current_app.config["SAMPLES_ROW_LIMIT"]
     return _get_full(query_context, query_obj, force_cached)
 
 

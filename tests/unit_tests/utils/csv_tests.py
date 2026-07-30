@@ -167,6 +167,13 @@ def test_df_to_escaped_csv():
     assert df_to_escaped_csv(df, encoding="utf8", index=False) == '0\n1\n""\n'
 
 
+def test_df_to_escaped_csv_with_chunksize():
+    df = pd.DataFrame({"value": ["text", "=1+1", "sample"]})
+    expected = df_to_escaped_csv(df.copy(), encoding="utf8", index=False)
+    chunked = df_to_escaped_csv(df.copy(), encoding="utf8", index=False, chunksize=1)
+    assert chunked == expected
+
+
 def test_get_chart_dataframe_returns_none_when_no_content(
     monkeypatch: pytest.MonkeyPatch,
 ):

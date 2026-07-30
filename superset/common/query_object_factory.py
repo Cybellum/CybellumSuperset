@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any, cast, TYPE_CHECKING
 
-from superset.common.chart_data import ChartDataResultType
+from superset.common.chart_data import ChartDataResultFormat, ChartDataResultType
 from superset.common.query_object import QueryObject
 from superset.common.utils.time_range_utils import get_since_until_from_time_range
 from superset.constants import NO_TIME_RANGE
@@ -35,6 +35,12 @@ from superset.utils.core import (
 if TYPE_CHECKING:
     from superset.connectors.sqla.models import BaseDatasource
     from superset.daos.datasource import DatasourceDAO
+
+
+_UNCAPPED_ROW_LIMIT_RESULT_TYPES = {
+    ChartDataResultType.SAMPLES,
+    ChartDataResultType.DRILL_DETAIL,
+}
 
 
 class QueryObjectFactory:  # pylint: disable=too-few-public-methods
@@ -58,6 +64,7 @@ class QueryObjectFactory:  # pylint: disable=too-few-public-methods
         time_range: str | None = None,
         time_shift: str | None = None,
         server_pagination: bool | None = None,
+        result_format: ChartDataResultFormat | None = None,
         **kwargs: Any,
     ) -> QueryObject:
         datasource_model_instance = None
@@ -68,7 +75,10 @@ class QueryObjectFactory:  # pylint: disable=too-few-public-methods
 
         # Process row limit taking server pagination into account
         row_limit = self._process_row_limit(
-            row_limit, result_type, server_pagination=server_pagination
+            row_limit,
+            result_type,
+            server_pagination=server_pagination,
+            result_format=result_format,
         )
 
         processed_time_range = self._process_time_range(
@@ -106,12 +116,14 @@ class QueryObjectFactory:  # pylint: disable=too-few-public-methods
         row_limit: int | None,
         result_type: ChartDataResultType,
         server_pagination: bool | None = None,
+        result_format: ChartDataResultFormat | None = None,
     ) -> int:
         """Process row limit taking into account server pagination.
 
         :param row_limit: The requested row limit
         :param result_type: The type of result being processed
         :param server_pagination: Whether server-side pagination is enabled
+        :param result_format: The requested result format
         :return: The processed row limit
         """
         default_row_limit = (
@@ -119,6 +131,11 @@ class QueryObjectFactory:  # pylint: disable=too-few-public-methods
             if result_type == ChartDataResultType.SAMPLES
             else self._config["ROW_LIMIT"]
         )
+        if (
+            result_type in _UNCAPPED_ROW_LIMIT_RESULT_TYPES
+            and result_format == ChartDataResultFormat.CSV
+        ):
+            return row_limit or default_row_limit
         return apply_max_row_limit(
             row_limit or default_row_limit,
             server_pagination=server_pagination,

@@ -14,10 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import io
 import logging
 import re
 import urllib.request
-from typing import Any, Optional, Union
+from typing import Any, Iterable, Iterator, Optional, Union
 from urllib.error import URLError
 
 import numpy as np
@@ -72,13 +73,126 @@ def df_to_escaped_csv(df: pd.DataFrame, **kwargs: Any) -> Any:
     df = df.rename(columns=escape_values)
 
     # Escape csv values
-    for name, column in df.items():
-        if column.dtype == np.dtype(object):
-            for idx, value in enumerate(column.values):
-                if isinstance(value, str):
-                    df.at[idx, name] = escape_value(value)
+    def escape_dataframe(target_df: pd.DataFrame) -> None:
+        for name, column in target_df.items():
+            if column.dtype == np.dtype(object):
+                target_df[name] = column.map(escape_values)
 
-    return df.to_csv(escapechar="\\", **kwargs)
+    chunksize = kwargs.pop("chunksize", None)
+    if isinstance(chunksize, int) and chunksize <= 0:
+        chunksize = None
+
+    logger.info(
+        "Starting escaped CSV conversion rows=%s columns=%s chunksize=%s",
+        len(df.index),
+        len(df.columns),
+        chunksize,
+    )
+    if chunksize is None:
+        logger.info(
+            "Escaping complete dataframe for CSV rows=%s columns=%s",
+            len(df.index),
+            len(df.columns),
+        )
+        escape_dataframe(df)
+        logger.info(
+            "Serializing complete dataframe to CSV rows=%s columns=%s",
+            len(df.index),
+            len(df.columns),
+        )
+        csv_output = df.to_csv(escapechar="\\", **kwargs)
+        logger.info(
+            "Finished escaped CSV conversion rows=%s columns=%s characters=%s",
+            len(df.index),
+            len(df.columns),
+            len(csv_output),
+        )
+        return csv_output
+
+    buffer = io.StringIO()
+    base_kwargs = dict(kwargs)
+    index = base_kwargs.get("index", True)
+    header = base_kwargs.get("header", True)
+    base_kwargs["index"] = index
+    chunk_count = (len(df.index) + chunksize - 1) // chunksize
+
+    for chunk_number, start in enumerate(range(0, len(df), chunksize)):
+        chunk = df.iloc[start : start + chunksize].copy()
+        logger.info(
+            "Escaping CSV chunk chunk=%s/%s start_row=%s rows=%s buffer_characters=%s",
+            chunk_number + 1,
+            chunk_count,
+            start,
+            len(chunk.index),
+            buffer.tell(),
+        )
+        escape_dataframe(chunk)
+        chunk_kwargs = dict(base_kwargs)
+        chunk_kwargs["header"] = header if chunk_number == 0 else False
+        logger.info(
+            "Serializing CSV chunk chunk=%s/%s rows=%s",
+            chunk_number + 1,
+            chunk_count,
+            len(chunk.index),
+        )
+        chunk.to_csv(buffer, escapechar="\\", **chunk_kwargs)
+        logger.info(
+            "Serialized CSV chunk chunk=%s/%s rows=%s buffer_characters=%s",
+            chunk_number + 1,
+            chunk_count,
+            len(chunk.index),
+            buffer.tell(),
+        )
+
+    csv_output = buffer.getvalue()
+    logger.info(
+        "Finished escaped CSV conversion rows=%s columns=%s chunks=%s characters=%s",
+        len(df.index),
+        len(df.columns),
+        chunk_count,
+        len(csv_output),
+    )
+    return csv_output
+
+
+def stream_escaped_csv(
+    df_batches: Iterable[pd.DataFrame], **kwargs: Any
+) -> Iterator[str]:
+    def escape_values(v: Any) -> Union[str, Any]:
+        return escape_value(v) if isinstance(v, str) else v
+
+    def escape_dataframe(target_df: pd.DataFrame) -> None:
+        for name, column in target_df.items():
+            if column.dtype == np.dtype(object):
+                target_df[name] = column.map(escape_values)
+
+    base_kwargs = dict(kwargs)
+    base_kwargs.pop("chunksize", None)
+    header = base_kwargs.get("header", True)
+
+    yielded = False
+    for batch_number, batch_df in enumerate(df_batches):
+        yielded = True
+        chunk = batch_df.rename(columns=escape_values)
+        escape_dataframe(chunk)
+        chunk_kwargs = dict(base_kwargs)
+        chunk_kwargs["header"] = header if batch_number == 0 else False
+        buffer = io.StringIO()
+        chunk.to_csv(buffer, escapechar="\\", **chunk_kwargs)
+        logger.info(
+            "Streamed CSV batch batch=%s rows=%s characters=%s",
+            batch_number + 1,
+            len(chunk.index),
+            buffer.tell(),
+        )
+        yield buffer.getvalue()
+
+    if not yielded:
+        empty_kwargs = dict(base_kwargs)
+        empty_kwargs["header"] = header
+        buffer = io.StringIO()
+        pd.DataFrame().to_csv(buffer, escapechar="\\", **empty_kwargs)
+        yield buffer.getvalue()
 
 
 def get_chart_csv_data(

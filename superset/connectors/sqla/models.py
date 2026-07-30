@@ -24,7 +24,7 @@ from collections import defaultdict
 from collections.abc import Hashable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, cast, Optional, Union
+from typing import Any, Callable, cast, Iterator, Optional, Union
 
 import pandas as pd
 import sqlalchemy as sa
@@ -1693,6 +1693,35 @@ class SqlaTable(
             errors=errors,
             error_message=error_message,
         )
+
+    def get_df_batches(
+        self,
+        query_obj: QueryObjectDict,
+        chunk_size: int | None = None,
+    ) -> tuple[Iterator[pd.DataFrame], str]:
+        query_str_ext = self.get_query_str_extended(query_obj)
+        sql = query_str_ext.sql
+        labels_expected = query_str_ext.labels_expected
+
+        def assign_column_label(df: pd.DataFrame) -> pd.DataFrame | None:
+            if df is not None and not df.empty:
+                if len(df.columns) < len(labels_expected):
+                    raise QueryObjectValidationError(
+                        _("Db engine did not return all queried columns")
+                    )
+                if len(df.columns) > len(labels_expected):
+                    df = df.iloc[:, 0 : len(labels_expected)]
+                df.columns = labels_expected
+            return df
+
+        batches = self.database.stream_dataframe_batches(
+            sql,
+            self.catalog,
+            self.schema or None,
+            chunk_size=chunk_size,
+            mutator=assign_column_label,
+        )
+        return batches, sql
 
     def get_sqla_table_object(self) -> Table:
         return self.database.get_table(
