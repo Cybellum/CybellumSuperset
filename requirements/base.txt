@@ -20,6 +20,8 @@ attrs==25.3.0
     #   referencing
     #   requests-cache
     #   trio
+authlib==1.6.12
+    # via -r requirements/base.in
 babel==2.17.0
     # via flask-babel
 backoff==2.2.1
@@ -85,6 +87,7 @@ croniter==6.0.0
 cryptography==44.0.3
     # via
     #   apache-superset (pyproject.toml)
+    #   authlib
     #   paramiko
     #   pyopenssl
 defusedxml==0.7.1
@@ -404,8 +407,6 @@ typing-extensions==4.14.0
     #   alembic
     #   cattrs
     #   limits
-    #   pyopenssl
-    #   referencing
     #   selenium
     #   shillelagh
 tzdata==2025.2
