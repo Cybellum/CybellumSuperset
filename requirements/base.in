@@ -53,9 +53,3 @@ setuptools<81
 # configured (Cybellum PSA's PsaOAuthSecurityManager, used for OAuth SSO). Not a base
 # Superset dependency, so pip-compile never pulls it in on its own.
 Authlib
-
-# Required by superset.stats_logger.StatsdStatsLogger (Cybellum PSA's STATS_LOGGER config,
-# for exporting Superset's cache hit/miss, SQL Lab, and report-scheduler metrics to
-# monitoring). Listed only under Superset's own dev/test dependency group in pyproject.toml,
-# so pip-compile never pulls it into the production image on its own.
-statsd
